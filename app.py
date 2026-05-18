@@ -6,16 +6,14 @@ import requests
 
 app = Flask(__name__)
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 AMO_DOMAIN = os.getenv("AMO_DOMAIN")
 AMO_ACCESS_TOKEN = os.getenv("AMO_ACCESS_TOKEN")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-
     data = request.json
-
     message = data.get("message", {})
 
     text = message.get("text", "")
@@ -47,7 +45,7 @@ def webhook():
 - Техник БПЛА
 - Инструктор БПЛА
 - Инструктор FPV
-- Бесплатный инструктор для СВО
+- Бесплатный инструктор для SVO
 - Документы
 - Стоимость
 - Расписание
@@ -72,7 +70,7 @@ def webhook():
 - класс
 - реакции без вопроса
 
-Верни строго JSON:
+Верни строго JSON без пояснений:
 
 {{
   "send_to_crm": true или false,
@@ -89,10 +87,11 @@ def webhook():
 """
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "user", "content": prompt}
-        ]
+        ],
+        temperature=0
     )
 
     result_text = response.choices[0].message.content
@@ -107,7 +106,6 @@ def webhook():
         return "ok"
 
     if analysis.get("send_to_crm") == True:
-
         lead_name = f"Telegram | {analysis.get('course_topic')}"
 
         note_text = f"""
@@ -138,15 +136,15 @@ Username: @{username}
             }
         ]
 
-        response = requests.post(
+        amo_response = requests.post(
             url,
             headers=headers,
             json=payload
         )
 
         print("AMO RESPONSE:")
-        print(response.status_code)
-        print(response.text)
+        print(amo_response.status_code)
+        print(amo_response.text)
 
     else:
         print("SEND TO CRM: NO")
