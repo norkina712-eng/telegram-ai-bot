@@ -1,5 +1,5 @@
 from flask import Flask, request
-from openai import OpenAI
+from groq import Groq
 import os
 import json
 import requests
