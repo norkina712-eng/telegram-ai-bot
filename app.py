@@ -3,6 +3,7 @@ from groq import Groq
 import os
 import json
 import requests
+import time
 
 app = Flask(__name__)
 
@@ -10,6 +11,110 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 AMO_DOMAIN = os.getenv("AMO_DOMAIN")
 AMO_ACCESS_TOKEN = os.getenv("AMO_ACCESS_TOKEN")
+
+
+def amo_headers():
+    return {
+        "Authorization": f"Bearer {AMO_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+
+def create_contact(first_name, username, telegram_id):
+    contact_name = first_name or username or f"Telegram ID {telegram_id}"
+
+    telegram_link = ""
+    if username and username != "без username":
+        telegram_link = f"https://t.me/{username}"
+
+    url = f"https://{AMO_DOMAIN}/api/v4/contacts"
+
+    payload = [
+        {
+            "name": contact_name,
+            "custom_fields_values": []
+        }
+    ]
+
+    response = requests.post(url, headers=amo_headers(), json=payload)
+
+    print("CREATE CONTACT RESPONSE:")
+    print(response.status_code)
+    print(response.text)
+
+    if response.status_code not in [200, 201]:
+        return None
+
+    return response.json()["_embedded"]["contacts"][0]["id"]
+
+
+def create_lead(course_topic, contact_id):
+    lead_name = f"Telegram | {course_topic}"
+
+    url = f"https://{AMO_DOMAIN}/api/v4/leads"
+
+    payload = [
+        {
+            "name": lead_name,
+            "_embedded": {
+                "contacts": [
+                    {
+                        "id": contact_id
+                    }
+                ]
+            }
+        }
+    ]
+
+    response = requests.post(url, headers=amo_headers(), json=payload)
+
+    print("CREATE LEAD RESPONSE:")
+    print(response.status_code)
+    print(response.text)
+
+    if response.status_code not in [200, 201]:
+        return None
+
+    return response.json()["_embedded"]["leads"][0]["id"]
+
+
+def add_note_to_lead(lead_id, note_text):
+    url = f"https://{AMO_DOMAIN}/api/v4/leads/{lead_id}/notes"
+
+    payload = [
+        {
+            "note_type": "common",
+            "params": {
+                "text": note_text
+            }
+        }
+    ]
+
+    response = requests.post(url, headers=amo_headers(), json=payload)
+
+    print("ADD NOTE RESPONSE:")
+    print(response.status_code)
+    print(response.text)
+
+
+def create_task(lead_id, task_text):
+    url = f"https://{AMO_DOMAIN}/api/v4/tasks"
+
+    payload = [
+        {
+            "entity_id": lead_id,
+            "entity_type": "leads",
+            "task_type_id": 1,
+            "text": task_text,
+            "complete_till": int(time.time()) + 3600
+        }
+    ]
+
+    response = requests.post(url, headers=amo_headers(), json=payload)
+
+    print("CREATE TASK RESPONSE:")
+    print(response.status_code)
+    print(response.text)
 
 
 @app.route('/webhook', methods=['POST'])
@@ -20,7 +125,8 @@ def webhook():
     text = message.get("text", "")
     user = message.get("from", {})
 
-    username = user.get("username", "без username")
+    telegram_id = user.get("id", "")
+    username = user.get("username", "")
     first_name = user.get("first_name", "")
 
     reply_to_message = message.get("reply_to_message", {})
@@ -115,49 +221,61 @@ def webhook():
         print(e)
         return "ok"
 
-    if analysis.get("send_to_crm") is True:
-        lead_name = f"Telegram | {analysis.get('course_topic')}"
+    if analysis.get("send_to_crm") is not True:
+        print("SEND TO CRM: NO")
+        return "ok"
 
-        note_text = f"""
-Комментарий: {text}
+    telegram_link = "Username не указан"
+    if username:
+        telegram_link = f"https://t.me/{username}"
 
-Username: @{username}
+    contact_id = create_contact(first_name, username, telegram_id)
 
-Имя: {first_name}
+    if not contact_id:
+        print("CONTACT WAS NOT CREATED")
+        return "ok"
 
-Тема: {analysis.get('course_topic')}
+    lead_id = create_lead(analysis.get("course_topic"), contact_id)
 
-Тип вопроса: {analysis.get('question_type')}
+    if not lead_id:
+        print("LEAD WAS NOT CREATED")
+        return "ok"
+
+    note_text = f"""
+Новая заявка из Telegram-комментария.
+
+Комментарий пользователя:
+{text}
+
+Текст поста:
+{post_text}
+
+Тема обучения:
+{analysis.get("course_topic")}
+
+Тип вопроса:
+{analysis.get("question_type")}
 
 Задача менеджеру:
-{analysis.get('manager_task')}
+{analysis.get("manager_task")}
+
+Telegram:
+@{username if username else "username не указан"}
+
+Ссылка для связи:
+{telegram_link}
+
+Имя:
+{first_name}
+
+Telegram ID:
+{telegram_id}
 """
 
-        url = f"https://{AMO_DOMAIN}/api/v4/leads"
+    add_note_to_lead(lead_id, note_text)
 
-        headers = {
-            "Authorization": f"Bearer {AMO_ACCESS_TOKEN}",
-            "Content-Type": "application/json"
-        }
-
-        payload = [
-            {
-                "name": lead_name
-            }
-        ]
-
-        amo_response = requests.post(
-            url,
-            headers=headers,
-            json=payload
-        )
-
-        print("AMO RESPONSE:")
-        print(amo_response.status_code)
-        print(amo_response.text)
-
-    else:
-        print("SEND TO CRM: NO")
+    task_text = f"Ответить пользователю в Telegram: {telegram_link}"
+    create_task(lead_id, task_text)
 
     return "ok"
 
