@@ -11,6 +11,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 AMO_DOMAIN = os.getenv("AMO_DOMAIN")
 AMO_ACCESS_TOKEN = os.getenv("AMO_ACCESS_TOKEN")
 
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -32,10 +33,10 @@ def webhook():
 Ты анализируешь комментарии под Telegram-каналом учебного центра по БПЛА.
 
 Определи:
-1. Нужно ли отправить комментарий в amoCRM
-2. Тему обучения
-3. Тип вопроса
-4. Что должен сделать менеджер
+1. Нужно ли отправить комментарий в amoCRM.
+2. Тему обучения.
+3. Тип вопроса.
+4. Что должен сделать менеджер.
 
 Темы:
 - Оператор БПЛА
@@ -54,26 +55,29 @@ def webhook():
 - Трудоустройство
 - Общая консультация
 
-В amoCRM отправлять если:
+В amoCRM отправлять, если:
 - пользователь хочет связаться;
 - спрашивает стоимость;
-- спрашивает курс;
+- спрашивает про курс;
 - просит консультацию;
 - хочет записаться;
 - спрашивает контакты;
 - пишет негатив;
-- спрашивает с кем поговорить.
+- спрашивает, с кем поговорить;
+- пишет: куда написать, кто проконсультирует, можно обсудить, как связаться.
 
 Не отправлять:
-- emoji
-- спасибо
-- класс
-- реакции без вопроса
+- emoji;
+- спасибо;
+- класс;
+- огонь;
+- обычные реакции без вопроса.
 
-Верни строго JSON без пояснений:
+Верни только чистый JSON без markdown и без ```json.
 
+Формат ответа:
 {{
-  "send_to_crm": true или false,
+  "send_to_crm": true,
   "course_topic": "тема",
   "question_type": "тип вопроса",
   "manager_task": "задача менеджеру"
@@ -94,25 +98,24 @@ def webhook():
         temperature=0
     )
 
-  result_text = response.choices[0].message.content
+    result_text = response.choices[0].message.content
 
-print("AI RESULT:")
-print(result_text)
+    print("AI RESULT:")
+    print(result_text)
 
-# Убираем markdown-обертку, если AI вернул ```json ... ```
-clean_result = result_text.strip()
-clean_result = clean_result.replace("```json", "")
-clean_result = clean_result.replace("```", "")
-clean_result = clean_result.strip()
+    clean_result = result_text.strip()
+    clean_result = clean_result.replace("```json", "")
+    clean_result = clean_result.replace("```", "")
+    clean_result = clean_result.strip()
 
-try:
-    analysis = json.loads(clean_result)
-except Exception as e:
-    print("AI returned invalid JSON")
-    print(e)
-    return "ok"
+    try:
+        analysis = json.loads(clean_result)
+    except Exception as e:
+        print("AI returned invalid JSON")
+        print(e)
+        return "ok"
 
-    if analysis.get("send_to_crm") == True:
+    if analysis.get("send_to_crm") is True:
         lead_name = f"Telegram | {analysis.get('course_topic')}"
 
         note_text = f"""
@@ -126,7 +129,7 @@ Username: @{username}
 
 Тип вопроса: {analysis.get('question_type')}
 
-Задача:
+Задача менеджеру:
 {analysis.get('manager_task')}
 """
 
@@ -158,9 +161,11 @@ Username: @{username}
 
     return "ok"
 
+
 @app.route('/')
 def home():
     return "Bot is running"
 
+
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host="0.0.0.0", port=5000)
