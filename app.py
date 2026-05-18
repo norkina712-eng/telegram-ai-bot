@@ -94,16 +94,23 @@ def webhook():
         temperature=0
     )
 
-    result_text = response.choices[0].message.content
+  result_text = response.choices[0].message.content
 
-    print("AI RESULT:")
-    print(result_text)
+print("AI RESULT:")
+print(result_text)
 
-    try:
-        analysis = json.loads(result_text)
-    except Exception:
-        print("AI returned invalid JSON")
-        return "ok"
+# Убираем markdown-обертку, если AI вернул ```json ... ```
+clean_result = result_text.strip()
+clean_result = clean_result.replace("```json", "")
+clean_result = clean_result.replace("```", "")
+clean_result = clean_result.strip()
+
+try:
+    analysis = json.loads(clean_result)
+except Exception as e:
+    print("AI returned invalid JSON")
+    print(e)
+    return "ok"
 
     if analysis.get("send_to_crm") == True:
         lead_name = f"Telegram | {analysis.get('course_topic')}"
